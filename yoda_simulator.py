@@ -2,49 +2,56 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
+from matplotlib.figure import Figure #for the use of panel
 import panel as pn
 
 np.random.seed(42)
 
 def portfolio_by_retirement(portfolio, initial_investment, withdraw_type, withdraw_number, years_to_retirement):
-    portfolio_dimension = portfolio.shape
-    
+    # recacluate weights if weights don't add to 1
+    portfolio.iloc[2,:] = portfolio.iloc[2,:]/sum(portfolio.iloc[2,:]) 
+    # get number of stocks in a portfolio
+    portfolio_dimension = portfolio.shape 
+    # generate random numbers for each stock for 30 years
     for stock in range(portfolio_dimension[1]):
         globals()['stock_%s' % stock]= np.random.normal(portfolio.iloc[0,stock], 
                                                         portfolio.iloc[1,stock],
-                                                        252*30*500).reshape(252*30,500) 
+                                                        (252*30,500))   #.reshape(252*30,500) 
     
     #initialize variables
     next_beginning_balance = np.ones((1,500))
     Portfolio_30_year = np.ones((1,500))
-
+    # transform input numbers into proper format
     withdraw_amount = withdraw_number/initial_investment
     withdraw_rate = withdraw_number
 
     for year in range(30):
-        #initialize for each year
+        # initialize for each year
         Portfolio_1_year = np.ones((1,500))
 
         for month in range(12):
-            #initialize for each month
+            # initialize for each month
             portfolio_monthly_return = np.zeros((22,500))
+
+            # calculate 30 each month's return for each stock and accumulate to portfolio by weights
             for stock in range(portfolio_dimension[1]):
                 stock_month_daily_return = np.concatenate((next_beginning_balance,
                                                            (globals()['stock_%s' % stock][year*12*21+month*21:year*12*21+(month+1)*21])+1), 
                                                           axis = 0)
-                portfolio_monthly_return += np.cumprod(stock_month_daily_return, axis = 0)*portfolio.iloc[2,stock] #overflow over 8 stocks
+                portfolio_monthly_return += np.cumprod(stock_month_daily_return, axis = 0)*portfolio.iloc[2,stock]
 
-            #get balance for rebalancing in next loop.
+            # get ending balance for rebalancing in next loop.
             next_beginning_balance = (portfolio_monthly_return[-1,:]).reshape(1,500)
-
+            # concatenate this month to i-year performance
             Portfolio_1_year = np.concatenate((Portfolio_1_year,portfolio_monthly_return[1:,:]), axis = 0)
 
+        # adjust ending balance each year by withdraw amount/rate
         if withdraw_type != 'fixed amount':
             next_beginning_balance = (portfolio_monthly_return[-1,:]).reshape(1,500)*(1-withdraw_rate)
         else:
             next_beginning_balance =(portfolio_monthly_return[-1,:]).reshape(1,500)-withdraw_amount
 
+        # concatenate 1 year performance to 30-year performance
         Portfolio_30_year = np.concatenate((Portfolio_30_year,Portfolio_1_year[1:,:]), axis = 0)
     Portfolio_30_year_simulation = pd.DataFrame(Portfolio_30_year[1:])
     return Portfolio_30_year_simulation.iloc[:years_to_retirement*252]*initial_investment
@@ -104,11 +111,10 @@ def search_withdraw_amount(portfolio, initial_investment, years_to_retirement, t
             to_print = (f"Rather than withdrawing, you should deposit ${-desired_withdraw_amount} annually, and ending 10% percentile balance after {years_to_retirement} years would be ${ending_10_percentile_balance}.")
         else:
             to_print = (f"The desired withdraw amount is ${desired_withdraw_amount} annually, and ending 10% percentile balance after {years_to_retirement} years would be ${ending_10_percentile_balance}.")
-        #chart = quantile_chart(portfolio,initial_investment, 'fixed amount', desired_withdraw_amount, years_to_retirement)
     except:
         to_print = "Your target return is out of bound.  Please input reasonable numbers!"
     result['a'] = to_print
-    result['b'] = desired_withdraw_amount
+    result['b'] = desired_withdraw_amount # with no desired amount, use flow control when using this dictionary.
     return result
 
 def search_withdraw_rate(portfolio, initial_investment, years_to_retirement, target_amount):
@@ -121,7 +127,6 @@ def search_withdraw_rate(portfolio, initial_investment, years_to_retirement, tar
         for change in range(min_withdraw, max_withdraw, learning_rate):
             investment_ending_price = portfolio_by_retirement(portfolio,initial_investment,'fixed rate', change/1000, years_to_retirement).iloc[-1]
             quantile_result = investment_ending_price.quantile(q=[0.10]).astype(int)
-                    #print(f"If withdrawing ${change} annually, the 10% percentile return will be ${quantile_result.iloc[0]}.")
             if quantile_result.iloc[0]<target_amount:
                 break
             desired_withdraw_rate = change/1000
@@ -133,5 +138,5 @@ def search_withdraw_rate(portfolio, initial_investment, years_to_retirement, tar
     except:
         to_print = "Your target return is out of bound.  Please input reasonable numbers!"
     result['a'] = to_print
-    result['b'] = desired_withdraw_rate
+    result['b'] = desired_withdraw_rate # with no desired rate, use flow control when using this dictionary.
     return result
